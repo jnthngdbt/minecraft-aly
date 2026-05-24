@@ -27,6 +27,9 @@ Tu es un développeur de jeu vidéo expérimenté, spécialisé dans les jeux br
 | 1–7 | Sélectionner le type de bloc |
 | Molette | Faire défiler les blocs |
 
+## Documentation
+Maintenir le `README.md` à jour à chaque modification du jeu. Toute nouvelle fonctionnalité, changement de constante, nouveau type de bloc ou modification des contrôles doit être reflété dans le README avant de terminer la tâche.
+
 ## Décisions techniques importantes
 - Winding des faces vérifié par produit vectoriel (e1×e2 = normale) — ne pas inverser sans recalculer
 - Ombrage de face fixe (top 100%, côtés 80%/65%, dessous 50%) — remplace un ancien AO bogué
