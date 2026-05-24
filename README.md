@@ -62,6 +62,7 @@ Tout le jeu tient dans `index.html` : HTML, CSS et JavaScript en un seul fichier
 - Vitesse de saut : 9 m/s
 - Collisions **AABB** : joueur 0.6×1.9×0.6 unités
 - Les mouvements X, Y, Z sont résolus séparément pour éviter le blocage aux arêtes
+- **Montée de marche smooth** : franchir un bloc d'un bloc de hauteur glisse vers le haut à 10 m/s (pas de téléportation brutale)
 - L'eau et les feuilles sont traversables (non solides)
 
 ### Animaux
@@ -70,7 +71,7 @@ Tout le jeu tient dans `index.html` : HTML, CSS et JavaScript en un seul fichier
 - 3 espèces : **Vache** (beige), **Cochon** (rose), **Mouton** (blanc)
 - Corps en boîtes Three.js (corps, tête, 4 pattes)
 - Comportement d'errance : alternance entre marcher (~2–7 s) et s'arrêter (~1–4 s), changement de direction aléatoire
-- **Physique** : gravité, collisions AABB identiques à celles du joueur
+- **Physique** : gravité, collisions AABB identiques à celles du joueur, montée de marche smooth
 - **Animation des pattes** : allure diagonale (patte avant droite + arrière gauche en phase)
 - Vitesse de marche : 1.8 m/s
 

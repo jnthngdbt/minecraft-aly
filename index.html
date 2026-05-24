@@ -88,6 +88,7 @@ const JUMP_SPEED   = 9;
 const WALK_SPEED   = 6;
 const FLY_SPEED    = 12;
 const PLAYER_HEIGHT = 1.7;
+const STEP_SPEED   = 20; // blocs/seconde pour la montée smooth de marche
 
 // ─── Block types ─────────────────────────────────────────────────────────────
 const BLOCK = {
@@ -403,6 +404,7 @@ const player = {
   flying: false,
   onGround: false,
   hotbarIdx: 0,
+  stepYTarget: null,
 };
 
 // Place camera at player eye level
@@ -546,7 +548,7 @@ function physicsStep(dt) {
     player.pos.x = newPosX.x;
   } else if (!player.flying && player.onGround) {
     const stepX = newPosX.clone(); stepX.y += 1.0;
-    if (!playerAABBCollide(stepX)) { player.pos.x = stepX.x; player.pos.y = stepX.y; }
+    if (!playerAABBCollide(stepX)) { player.pos.x = stepX.x; player.stepYTarget = stepX.y; }
     else player.vel.x = 0;
   } else { player.vel.x = 0; }
 
@@ -556,18 +558,26 @@ function physicsStep(dt) {
     player.pos.z = newPosZ.z;
   } else if (!player.flying && player.onGround) {
     const stepZ = newPosZ.clone(); stepZ.y += 1.0;
-    if (!playerAABBCollide(stepZ)) { player.pos.z = stepZ.z; player.pos.y = stepZ.y; }
+    if (!playerAABBCollide(stepZ)) { player.pos.z = stepZ.z; player.stepYTarget = stepZ.y; }
     else player.vel.z = 0;
   } else { player.vel.z = 0; }
 
-  // Y movement
-  const newPosY = player.pos.clone(); newPosY.y += player.vel.y * dt;
-  if (!playerAABBCollide(newPosY)) {
-    player.pos.y = newPosY.y;
-    player.onGround = false;
-  } else {
-    if (player.vel.y < 0) player.onGround = true;
+  // Y movement — interpolation smooth si montée de marche en cours
+  if (player.stepYTarget !== null) {
+    const dy = player.stepYTarget - player.pos.y;
+    player.pos.y += Math.min(STEP_SPEED * dt, Math.abs(dy)) * Math.sign(dy);
     player.vel.y = 0;
+    player.onGround = true;
+    if (Math.abs(player.stepYTarget - player.pos.y) < 0.01) { player.pos.y = player.stepYTarget; player.stepYTarget = null; }
+  } else {
+    const newPosY = player.pos.clone(); newPosY.y += player.vel.y * dt;
+    if (!playerAABBCollide(newPosY)) {
+      player.pos.y = newPosY.y;
+      player.onGround = false;
+    } else {
+      if (player.vel.y < 0) player.onGround = true;
+      player.vel.y = 0;
+    }
   }
 
   // Prevent falling through world floor
@@ -645,13 +655,14 @@ function spawnAnimal(wx, wy, wz) {
   animals.push({
     mesh,
     def,
-    pos:        new THREE.Vector3(wx + 0.5, wy, wz + 0.5),
-    vel:        new THREE.Vector3(),
-    onGround:   false,
-    stateTimer: Math.random() * 3,
-    moving:     false,
+    pos:         new THREE.Vector3(wx + 0.5, wy, wz + 0.5),
+    vel:         new THREE.Vector3(),
+    onGround:    false,
+    stateTimer:  Math.random() * 3,
+    moving:      false,
     moveAngle,
-    legPhase:   Math.random() * Math.PI * 2,
+    legPhase:    Math.random() * Math.PI * 2,
+    stepYTarget: null,
   });
 }
 
@@ -717,7 +728,7 @@ function updateAnimals(dt) {
       a.pos.x = px.x;
     } else if (!inWater && a.onGround && !animalInWater(px, h) && !animalAboveWater(px)) {
       const stepX = px.clone(); stepX.y += 1.0;
-      if (!animalCollide(stepX, h) && !animalInWater(stepX, h)) { a.pos.x = stepX.x; a.pos.y = stepX.y; }
+      if (!animalCollide(stepX, h) && !animalInWater(stepX, h)) { a.pos.x = stepX.x; a.stepYTarget = stepX.y; }
       else { a.vel.x = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
     } else { a.vel.x = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
 
@@ -728,14 +739,23 @@ function updateAnimals(dt) {
       a.pos.z = pz.z;
     } else if (!inWater && a.onGround && !animalInWater(pz, h) && !animalAboveWater(pz)) {
       const stepZ = pz.clone(); stepZ.y += 1.0;
-      if (!animalCollide(stepZ, h) && !animalInWater(stepZ, h)) { a.pos.z = stepZ.z; a.pos.y = stepZ.y; }
+      if (!animalCollide(stepZ, h) && !animalInWater(stepZ, h)) { a.pos.z = stepZ.z; a.stepYTarget = stepZ.y; }
       else { a.vel.z = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
     } else { a.vel.z = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
 
-    const py = a.pos.clone(); py.y += a.vel.y * dt;
-    if (!animalCollide(py, h)) { a.pos.y = py.y; if (!inWater) a.onGround = false; }
-    else { if (a.vel.y < 0) a.onGround = true; a.vel.y = 0; }
-    if (a.pos.y < 0) { a.pos.y = 0; a.vel.y = 0; a.onGround = true; }
+    // Y — interpolation smooth si montée de marche en cours
+    if (a.stepYTarget !== null) {
+      const dy = a.stepYTarget - a.pos.y;
+      a.pos.y += Math.min(STEP_SPEED * dt, Math.abs(dy)) * Math.sign(dy);
+      a.vel.y = 0;
+      a.onGround = true;
+      if (Math.abs(a.stepYTarget - a.pos.y) < 0.01) { a.pos.y = a.stepYTarget; a.stepYTarget = null; }
+    } else {
+      const py = a.pos.clone(); py.y += a.vel.y * dt;
+      if (!animalCollide(py, h)) { a.pos.y = py.y; if (!inWater) a.onGround = false; }
+      else { if (a.vel.y < 0) a.onGround = true; a.vel.y = 0; }
+      if (a.pos.y < 0) { a.pos.y = 0; a.vel.y = 0; a.onGround = true; }
+    }
 
     if (a.moving || inWater) a.legPhase += dt * 8;
     const s    = (a.moving || inWater) ? Math.sin(a.legPhase) * 0.5 : 0;
