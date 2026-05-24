@@ -542,13 +542,23 @@ function physicsStep(dt) {
 
   // X movement
   const newPosX = player.pos.clone(); newPosX.x += player.vel.x * dt;
-  if (!playerAABBCollide(newPosX)) player.pos.x = newPosX.x;
-  else player.vel.x = 0;
+  if (!playerAABBCollide(newPosX)) {
+    player.pos.x = newPosX.x;
+  } else if (!player.flying && player.onGround) {
+    const stepX = newPosX.clone(); stepX.y += 1.0;
+    if (!playerAABBCollide(stepX)) { player.pos.x = stepX.x; player.pos.y = stepX.y; }
+    else player.vel.x = 0;
+  } else { player.vel.x = 0; }
 
   // Z movement
   const newPosZ = player.pos.clone(); newPosZ.z += player.vel.z * dt;
-  if (!playerAABBCollide(newPosZ)) player.pos.z = newPosZ.z;
-  else player.vel.z = 0;
+  if (!playerAABBCollide(newPosZ)) {
+    player.pos.z = newPosZ.z;
+  } else if (!player.flying && player.onGround) {
+    const stepZ = newPosZ.clone(); stepZ.y += 1.0;
+    if (!playerAABBCollide(stepZ)) { player.pos.z = stepZ.z; player.pos.y = stepZ.y; }
+    else player.vel.z = 0;
+  } else { player.vel.z = 0; }
 
   // Y movement
   const newPosY = player.pos.clone(); newPosY.y += player.vel.y * dt;
@@ -562,6 +572,196 @@ function physicsStep(dt) {
 
   // Prevent falling through world floor
   if (player.pos.y < 0) { player.pos.y = 0; player.vel.y = 0; player.onGround = true; }
+}
+
+// ─── Animals ──────────────────────────────────────────────────────────────────
+const ANIMAL_DEFS = [
+  {
+    name: 'Vache',
+    colors: { body: 0xcfc0a0, head: 0xfff5e0, legs: 0x908070 },
+    bodySize: [0.9, 0.6, 0.5],
+    headSize: [0.45, 0.45, 0.45],
+  },
+  {
+    name: 'Cochon',
+    colors: { body: 0xffb6c1, head: 0xff7a92, legs: 0xffb0be },
+    bodySize: [0.75, 0.5, 0.45],
+    headSize: [0.42, 0.42, 0.40],
+  },
+  {
+    name: 'Mouton',
+    colors: { body: 0xe0e0e0, head: 0xd0d0d0, legs: 0x888880 },
+    bodySize: [0.85, 0.65, 0.5],
+    headSize: [0.38, 0.42, 0.40],
+  },
+];
+
+const ANIMAL_SPEED = 1.8;
+const ANIMAL_W     = 0.3;
+const animals      = [];
+
+function createAnimalMesh(def) {
+  const group = new THREE.Group();
+  const legH  = 0.4;
+  const [bW, bH, bD] = def.bodySize;
+  const [hW, hH, hD] = def.headSize;
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(bW, bH, bD),
+    new THREE.MeshLambertMaterial({ color: def.colors.body })
+  );
+  body.position.set(0, legH + bH / 2, 0);
+  group.add(body);
+
+  const head = new THREE.Mesh(
+    new THREE.BoxGeometry(hW, hH, hD),
+    new THREE.MeshLambertMaterial({ color: def.colors.head })
+  );
+  head.position.set(0, legH + bH * 0.75, bD / 2 + hD / 2);
+  group.add(head);
+
+  const legW   = 0.16;
+  const legGeo = new THREE.BoxGeometry(legW, legH, legW);
+  const legMat = new THREE.MeshLambertMaterial({ color: def.colors.legs });
+  const legs   = [];
+  for (const lx of [bW / 2 - 0.1, -(bW / 2 - 0.1)]) {
+    for (const lz of [bD / 2 - 0.1, -(bD / 2 - 0.1)]) {
+      const leg = new THREE.Mesh(legGeo, legMat);
+      leg.position.set(lx, legH / 2, lz);
+      group.add(leg);
+      legs.push(leg);
+    }
+  }
+  group.userData.legs = legs;
+  return group;
+}
+
+function spawnAnimal(wx, wy, wz) {
+  const def       = ANIMAL_DEFS[Math.floor(Math.random() * ANIMAL_DEFS.length)];
+  const mesh      = createAnimalMesh(def);
+  const moveAngle = Math.random() * Math.PI * 2;
+  mesh.rotation.y = Math.PI / 2 - moveAngle;
+  scene.add(mesh);
+  animals.push({
+    mesh,
+    def,
+    pos:        new THREE.Vector3(wx + 0.5, wy, wz + 0.5),
+    vel:        new THREE.Vector3(),
+    onGround:   false,
+    stateTimer: Math.random() * 3,
+    moving:     false,
+    moveAngle,
+    legPhase:   Math.random() * Math.PI * 2,
+  });
+}
+
+function animalCollide(pos, h) {
+  for (let bx = Math.floor(pos.x - ANIMAL_W); bx <= Math.floor(pos.x + ANIMAL_W); bx++)
+    for (let by = Math.floor(pos.y); by <= Math.floor(pos.y + h); by++)
+      for (let bz = Math.floor(pos.z - ANIMAL_W); bz <= Math.floor(pos.z + ANIMAL_W); bz++)
+        if (isBlockSolid(bx, by, bz)) return true;
+  return false;
+}
+
+function animalInWater(pos, h) {
+  for (let bx = Math.floor(pos.x - ANIMAL_W); bx <= Math.floor(pos.x + ANIMAL_W); bx++)
+    for (let by = Math.floor(pos.y); by <= Math.floor(pos.y + h); by++)
+      for (let bz = Math.floor(pos.z - ANIMAL_W); bz <= Math.floor(pos.z + ANIMAL_W); bz++)
+        if (getBlock(bx, by, bz) === BLOCK.WATER) return true;
+  return false;
+}
+
+// Retourne true si la chute depuis pos atterrirait dans l'eau (pas de sol solide avant l'eau)
+function animalAboveWater(pos) {
+  const bx = Math.floor(pos.x), bz = Math.floor(pos.z);
+  for (let dy = 0; dy <= 6; dy++) {
+    const by = Math.floor(pos.y) - dy;
+    if (by < 0) return false;
+    if (isBlockSolid(bx, by, bz)) return false;
+    if (getBlock(bx, by, bz) === BLOCK.WATER) return true;
+  }
+  return false;
+}
+
+function updateAnimals(dt) {
+  for (const a of animals) {
+    const h       = 0.4 + a.def.bodySize[1] + 0.05;
+    const inWater = animalInWater(a.pos, h);
+
+    a.stateTimer -= dt;
+    if (a.stateTimer <= 0) {
+      a.moving     = !a.moving;
+      a.stateTimer = a.moving ? 2 + Math.random() * 5 : 1 + Math.random() * 3;
+      if (a.moving) a.moveAngle = Math.random() * Math.PI * 2;
+    }
+
+    if (a.moving || inWater) {
+      a.vel.x = Math.cos(a.moveAngle) * ANIMAL_SPEED;
+      a.vel.z = Math.sin(a.moveAngle) * ANIMAL_SPEED;
+    } else {
+      a.vel.x = 0;
+      a.vel.z = 0;
+    }
+
+    // Flottaison si dans l'eau, gravité sinon
+    if (inWater) {
+      a.vel.y = 3.0;
+    } else if (!a.onGround) {
+      a.vel.y += GRAVITY * dt;
+    }
+
+    // X — depuis la terre : bloque si eau directe ou falaise au-dessus de l'eau
+    const px = a.pos.clone(); px.x += a.vel.x * dt;
+    const xSafe = inWater || (!animalInWater(px, h) && !animalAboveWater(px));
+    if (!animalCollide(px, h) && xSafe) {
+      a.pos.x = px.x;
+    } else if (!inWater && a.onGround && !animalInWater(px, h) && !animalAboveWater(px)) {
+      const stepX = px.clone(); stepX.y += 1.0;
+      if (!animalCollide(stepX, h) && !animalInWater(stepX, h)) { a.pos.x = stepX.x; a.pos.y = stepX.y; }
+      else { a.vel.x = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
+    } else { a.vel.x = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
+
+    // Z — même logique
+    const pz = a.pos.clone(); pz.z += a.vel.z * dt;
+    const zSafe = inWater || (!animalInWater(pz, h) && !animalAboveWater(pz));
+    if (!animalCollide(pz, h) && zSafe) {
+      a.pos.z = pz.z;
+    } else if (!inWater && a.onGround && !animalInWater(pz, h) && !animalAboveWater(pz)) {
+      const stepZ = pz.clone(); stepZ.y += 1.0;
+      if (!animalCollide(stepZ, h) && !animalInWater(stepZ, h)) { a.pos.z = stepZ.z; a.pos.y = stepZ.y; }
+      else { a.vel.z = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
+    } else { a.vel.z = 0; a.moveAngle += Math.PI + (Math.random() - 0.5); }
+
+    const py = a.pos.clone(); py.y += a.vel.y * dt;
+    if (!animalCollide(py, h)) { a.pos.y = py.y; if (!inWater) a.onGround = false; }
+    else { if (a.vel.y < 0) a.onGround = true; a.vel.y = 0; }
+    if (a.pos.y < 0) { a.pos.y = 0; a.vel.y = 0; a.onGround = true; }
+
+    if (a.moving || inWater) a.legPhase += dt * 8;
+    const s    = (a.moving || inWater) ? Math.sin(a.legPhase) * 0.5 : 0;
+    const legs = a.mesh.userData.legs;
+    legs[0].rotation.x =  s;
+    legs[1].rotation.x = -s;
+    legs[2].rotation.x = -s;
+    legs[3].rotation.x =  s;
+
+    a.mesh.position.copy(a.pos);
+    a.mesh.rotation.y = Math.PI / 2 - a.moveAngle;
+  }
+}
+
+function spawnInitialAnimals() {
+  let spawned = 0, tries = 0;
+  while (spawned < 15 && tries < 500) {
+    tries++;
+    const wx = Math.floor(8 + (Math.random() - 0.5) * 256);
+    const wz = Math.floor(8 + (Math.random() - 0.5) * 256);
+    let wy = WORLD_HEIGHT - 1;
+    while (wy > 0 && getBlock(wx, wy, wz) === BLOCK.AIR) wy--;
+    if (getBlock(wx, wy, wz) !== BLOCK.GRASS) continue;
+    spawnAnimal(wx, wy + 1, wz);
+    spawned++;
+  }
 }
 
 // ─── HUD ──────────────────────────────────────────────────────────────────────
@@ -613,6 +813,7 @@ function animate() {
   if (fpsTime >= 0.5) { fps = Math.round(fpsCount / fpsTime); fpsCount = 0; fpsTime = 0; }
 
   physicsStep(dt);
+  updateAnimals(dt);
   updateCamera();
   updateChunks(player.pos.x, player.pos.z);
 
@@ -645,10 +846,22 @@ for (let dx = -2; dx <= 2; dx++) {
     getChunkBlocks(dx, dz);
   }
 }
-// Find spawn height
-let spawnY = WORLD_HEIGHT - 1;
-while (spawnY > 0 && getBlock(8, spawnY, 8) === BLOCK.AIR) spawnY--;
-player.pos.set(8, spawnY + 2, 8);
+// Find a dry land spawn point (spiral outward until grass is found)
+let spawnX = 8, spawnZ = 8, spawnY = 2;
+spawnSearch: for (let r = 0; r <= 48; r++) {
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const wx = Math.round(8 + Math.cos(angle) * r);
+    const wz = Math.round(8 + Math.sin(angle) * r);
+    let wy = WORLD_HEIGHT - 1;
+    while (wy > 0 && getBlock(wx, wy, wz) === BLOCK.AIR) wy--;
+    if (getBlock(wx, wy, wz) === BLOCK.GRASS) {
+      spawnX = wx; spawnZ = wz; spawnY = wy + 1;
+      break spawnSearch;
+    }
+  }
+}
+player.pos.set(spawnX, spawnY, spawnZ);
 
 // Build initial meshes
 for (let dx = -2; dx <= 2; dx++) {
@@ -657,6 +870,7 @@ for (let dx = -2; dx <= 2; dx++) {
   }
 }
 
+spawnInitialAnimals();
 animate();
 </script>
 </body>

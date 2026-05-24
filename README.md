@@ -64,6 +64,16 @@ Tout le jeu tient dans `index.html` : HTML, CSS et JavaScript en un seul fichier
 - Les mouvements X, Y, Z sont résolus séparément pour éviter le blocage aux arêtes
 - L'eau et les feuilles sont traversables (non solides)
 
+### Animaux
+
+- **15 animaux** spawnnés aléatoirement sur les blocs de gazon à la génération du monde
+- 3 espèces : **Vache** (beige), **Cochon** (rose), **Mouton** (blanc)
+- Corps en boîtes Three.js (corps, tête, 4 pattes)
+- Comportement d'errance : alternance entre marcher (~2–7 s) et s'arrêter (~1–4 s), changement de direction aléatoire
+- **Physique** : gravité, collisions AABB identiques à celles du joueur
+- **Animation des pattes** : allure diagonale (patte avant droite + arrière gauche en phase)
+- Vitesse de marche : 1.8 m/s
+
 ### Interaction blocs
 
 - Raycast par pas de 0.05 unités jusqu'à 6 unités de distance
